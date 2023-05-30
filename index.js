@@ -3,6 +3,7 @@ const app = express();
 const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 
 // middleware
@@ -34,14 +35,58 @@ async function run() {
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
+   
    const menuCollection = client.db('bistroDb').collection('menu');
    const reviewsCollection = client.db('bistroDb').collection('reviews');
    const cartCollection = client.db('bistroDb').collection('carts');
+   const usersCollection = client.db('bistroDb').collection('users');
 
+// JWT RELATED
+app.post('/jwt', (req,res)=>{
+  const user = req.body;
+  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '1h'})
+  res.send({token}); 
+})
+
+
+  
+  // users related apis
+  app.post('/users', async(req, res) =>{
+    const user = req.body;
+   
+    const query = {email: user.email}
+    const existingUser = await usersCollection.findOne(query);
+   
+    if(existingUser){
+      return res.send({message: 'user already exist'})
+    }
+    const result = await usersCollection.insertOne(user);
+    res.send(result);
+  })
+  app.get('/users', async(req, res) =>{
+    const result = await usersCollection.find().toArray();
+    res.send(result)
+  })
+// users update operations
+app.patch('/users/admin/:id', async(req, res)=>{
+  const id = req.params.id;
+  const filter = {_id: new ObjectId(id)};
+  const updateDoc = {
+    $set:{
+      role: 'admin'
+    }
+  }
+  const result = await usersCollection.updateOne(filter, updateDoc);
+  res.send(result)
+})
+//TODO: users delete
+
+  //  menu apis
    app.get('/menu', async(req, res) =>{
     const result = await menuCollection.find().toArray();
     res.send(result)
    })
+  //  reviews api
    app.get('/reviews', async(req, res) =>{
     const result = await reviewsCollection.find().toArray();
     res.send(result)
@@ -71,6 +116,7 @@ async function run() {
     const result = await cartCollection.deleteOne(query);
     res.send(result)
   })
+
 
   } finally {
     // Ensures that the client will close when you finish/error
