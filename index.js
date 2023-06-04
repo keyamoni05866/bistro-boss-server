@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
 const port = process.env.PORT || 5000;
 
 // middleware
@@ -60,24 +61,25 @@ async function run() {
    const reviewsCollection = client.db('bistroDb').collection('reviews');
    const cartCollection = client.db('bistroDb').collection('carts');
    const usersCollection = client.db('bistroDb').collection('users');
+   const paymentCollection = client.db('bistroDb').collection('payments');
 
 // JWT RELATED
 
+app.post('/jwt', (req,res)=>{
+  const user = req.body;
+  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '1h'})
+  res.send({token}); 
+})
  const verifyAdmin = async(req, res, next)=>{
           const email = req.decoded.email;
           const query = {email: email};
           const user = await usersCollection.findOne(query);
           if(user?.role !== 'admin'){
             return res.status(403).send({err: true, message: 'forbidden message'})
-          
           }
           next();
  }
-app.post('/jwt', (req,res)=>{
-  const user = req.body;
-  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '1h'})
-  res.send({token}); 
-})
+
 
 
   
@@ -132,6 +134,19 @@ app.patch('/users/admin/:id', async(req, res)=>{
     const result = await menuCollection.find().toArray();
     res.send(result)
    })
+
+   app.post('/menu', verifyJWT, verifyAdmin, async(req, res)=>{
+    const newItem = req.body;
+    const result = await  menuCollection.insertOne(newItem);
+    res.send(result)
+   })
+  //  menu delete
+  app.delete('/menu/:id', verifyJWT, verifyAdmin, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) }
+    const result = await menuCollection.deleteOne(query);
+    res.send(result);
+  })
   //  reviews api
    app.get('/reviews', async(req, res) =>{
     const result = await reviewsCollection.find().toArray();
@@ -163,10 +178,35 @@ app.patch('/users/admin/:id', async(req, res)=>{
   // cart delete
   app.delete('/carts/:id', async(req, res) =>{
     const id = req.params.id;
-    const query = {_id: new ObjectId(id) };
+    const query = { _id: new ObjectId(id) };
     const result = await cartCollection.deleteOne(query);
     res.send(result)
   })
+
+
+  // payment related
+  // create payment intent
+  app.post('/create-payment-intent', verifyJWT, async (req, res) => {
+    const { price } = req.body;
+    const amount = parseInt(price * 100);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount,
+      currency: 'usd',
+      payment_method_types: ['card']
+    });
+
+    res.send({
+      clientSecret: paymentIntent.client_secret
+    })
+  })
+
+  // payment related api
+  app.post('/payments', verifyJWT, async(req, res) =>{
+    const payment = req.body;
+    const result = await paymentCollection.insertOne(payment);
+    res.send(result)
+  })
+
 
 
   } finally {
